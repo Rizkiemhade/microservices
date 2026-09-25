@@ -16,8 +16,8 @@ async function initializeDatabase() {
     if (rows[0].total === 0) {
         await pool.query(`
             INSERT INTO products (name, description, price, stock) VALUES
-            ('Product A', 'Description A', 99.99, 10),
-            ('Product B', 'Description B', 149.99, 5)
+            ('Product 1', 'Description A', 99.99, 10),
+            ('Product 2', 'Description B', 149.99, 5)
         `);
     }
 }
