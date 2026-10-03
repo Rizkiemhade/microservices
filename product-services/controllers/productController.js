@@ -1,4 +1,26 @@
 const productModel = require('../models/productModel');
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+
+function validateImage(image) {
+    if (typeof image !== 'string' || image.length === 0) {
+        return 'Field image wajib diisi';
+    }
+
+    if (image.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image)) {
+        return 'Field image harus berupa Base64 yang valid';
+    }
+
+    const decodedImage = Buffer.from(image, 'base64');
+    if (decodedImage.toString('base64') !== image) {
+        return 'Field image harus berupa Base64 yang valid';
+    }
+
+    if (decodedImage.length > MAX_IMAGE_SIZE) {
+        return 'Ukuran image maksimal 2 MB';
+    }
+
+    return null;
+}
 
 async function getAllProducts(req, res) {
     try {
@@ -46,7 +68,12 @@ async function getProductByIdHandler(req, res) {
 }
 
 async function createProduct(req, res) {
-    const { name, description, price, stock } = req.body;
+    const { name, description, price, stock, image } = req.body;
+
+    const imageError = validateImage(image);
+    if (imageError) {
+        return res.status(400).json({ message: imageError });
+    }
 
     if (!name || price === undefined || stock === undefined) {
         return res.status(400).json({
@@ -59,7 +86,8 @@ async function createProduct(req, res) {
             name,
             description: description || '',
             price,
-            stock
+            stock,
+            image
         });
 
         return res.status(201).json({
@@ -76,12 +104,17 @@ async function createProduct(req, res) {
 
 async function updateProduct(req, res) {
     const id = Number(req.params.id);
-    const { name, description, price, stock } = req.body;
+    const { name, description, price, stock, image } = req.body;
 
     if (!Number.isInteger(id) || id <= 0) {
         return res.status(400).json({
             message: "ID product tidak valid"
         });
+    }
+
+    const imageError = validateImage(image);
+    if (imageError) {
+        return res.status(400).json({ message: imageError });
     }
 
     if (!name || price === undefined || stock === undefined) {
@@ -103,7 +136,8 @@ async function updateProduct(req, res) {
             name,
             description: description || '',
             price,
-            stock
+            stock,
+            image
         });
 
         return res.json({
