@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\CartItemNotFoundException;
+use App\Exceptions\ProductNotFoundException;
 use App\Http\Requests\AddCartItemRequest;
 use App\Http\Requests\UpdateCartItemRequest;
 use App\Services\CartService;
@@ -25,7 +26,7 @@ class CartController extends Controller
                 ]
             );
         } catch (Throwable $e) {
-            return $this->serverError($e, 'mengambil keranjang');
+            return $this->errorResponse($e, 'mengambil keranjang');
         }
     }
 
@@ -44,8 +45,12 @@ class CartController extends Controller
                 'message' => 'Item berhasil ditambahkan ke keranjang',
                 'data' => $item,
             ], $item->wasRecentlyCreated ? 201 : 200);
+        } catch (ProductNotFoundException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 404);
         } catch (Throwable $e) {
-            return $this->serverError($e, 'menambahkan item');
+            return $this->errorResponse($e, 'menambahkan item');
         }
     }
 
@@ -68,7 +73,7 @@ class CartController extends Controller
                 'message' => $e->getMessage(),
             ], 404);
         } catch (Throwable $e) {
-            return $this->serverError($e, 'memperbarui item');
+            return $this->errorResponse($e, 'memperbarui item');
         }
     }
 
@@ -85,7 +90,7 @@ class CartController extends Controller
                 'message' => $e->getMessage(),
             ], 404);
         } catch (Throwable $e) {
-            return $this->serverError($e, 'menghapus item');
+            return $this->errorResponse($e, 'menghapus item');
         }
     }
 
@@ -99,11 +104,11 @@ class CartController extends Controller
                 ],
             ]);
         } catch (Throwable $e) {
-            return $this->serverError($e, 'mengosongkan keranjang');
+            return $this->errorResponse($e, 'mengosongkan keranjang');
         }
     }
 
-    private function serverError(Throwable $e, string $action): JsonResponse
+    private function errorResponse(Throwable $e, string $action): JsonResponse
     {
         report($e);
 
