@@ -11,25 +11,20 @@
 
 ### Create an order
 
-`POST /api/orders` accepts JSON with a user ID and one or more product IDs and
-quantities. The optional `idempotency_key` lets a client safely retry a checkout.
-Product names, prices, and the order total are resolved by the service; clients
-must not send prices or totals.
+`POST /api/orders` accepts a user ID and an optional idempotency key. The Order
+Service retrieves the user's cart from Cart Service, then verifies each product
+with Product Service. Clients must not send cart items, prices, or totals.
 
 ```json
 {
   "user_id": 42,
-  "items": [
-    {
-      "product_id": 7,
-      "quantity": 2
-    }
-  ],
   "idempotency_key": "checkout-42-001"
 }
 ```
 
-On success, the API responds with HTTP `201` and an order representation:
+On success, the API responds with HTTP `201` and an order representation. A
+retry using the same user and idempotency key returns the existing order with
+HTTP `200`.
 
 ```json
 {
@@ -51,18 +46,24 @@ On success, the API responds with HTTP `201` and an order representation:
 }
 ```
 
-Invalid input responds with HTTP `422` and Laravel's standard validation body:
+Invalid input or an empty cart responds with HTTP `422` and Laravel's standard
+validation body:
 
 ```json
 {
   "message": "The given data was invalid.",
   "errors": {
-    "items.0.quantity": [
-      "The items.0.quantity field is required."
+    "cart": [
+      "Cannot create an order from an empty cart."
     ]
   }
 }
 ```
+
+A missing product responds with HTTP `422`. If Cart or Product Service is
+unavailable, the endpoint responds with HTTP `503` and does not create an order.
+The order and its product snapshots are persisted together in a database
+transaction.
 
 ### Service URLs
 
