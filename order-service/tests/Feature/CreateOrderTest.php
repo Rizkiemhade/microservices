@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\OrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -101,6 +102,50 @@ class CreateOrderTest extends TestCase
         Http::fake([
             'http://product.test/products/7' => Http::response(['message' => 'Not found'], 404),
         ]);
+
+        $this->postJson('/api/orders', ['user_id' => 42])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('cart');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+    }
+
+    public function test_checkout_reports_a_missing_cart_without_creating_an_order(): void
+    {
+        Http::fake([
+            'http://cart.test/carts/42' => Http::response(['message' => 'Not found'], 404),
+        ]);
+
+        $this->postJson('/api/orders', ['user_id' => 42])
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Cart for user 42 was not found.');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+    }
+
+    public function test_checkout_reports_product_service_timeout_without_creating_an_order(): void
+    {
+        $this->fakeCart([['product_id' => 7, 'quantity' => 1]]);
+        Http::fake([
+            'http://product.test/products/7' => function () {
+                throw new ConnectionException('cURL error 28: Operation timed out.');
+            },
+        ]);
+
+        $this->postJson('/api/orders', ['user_id' => 42])
+            ->assertServiceUnavailable()
+            ->assertJsonPath('service', 'Product Service');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+    }
+
+    public function test_checkout_rejects_a_total_larger_than_the_order_column_can_store(): void
+    {
+        $this->fakeCart([['product_id' => 7, 'quantity' => 2]]);
+        $this->fakeProduct(7, 'Expensive item', '9999999999.99');
 
         $this->postJson('/api/orders', ['user_id' => 42])
             ->assertUnprocessable()
