@@ -65,6 +65,25 @@ unavailable, the endpoint responds with HTTP `503` and does not create an order.
 The order and its product snapshots are persisted together in a database
 transaction.
 
+### Read orders
+
+Get one order belonging to a user:
+
+```text
+GET /api/users/{userId}/orders/{orderId}
+```
+
+List a user's orders (15 per page):
+
+```text
+GET /api/users/{userId}/orders
+```
+
+Both endpoints include the order status and its item snapshots. The detail
+endpoint returns `404` when the order does not exist or does not belong to the
+requested user. The list response uses Laravel pagination fields (`data`,
+`links`, and `meta`).
+
 ### Service URLs
 
 The Order Service reads the Cart and Product Service base URLs from

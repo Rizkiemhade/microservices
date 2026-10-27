@@ -6,7 +6,7 @@ use App\Exceptions\CartNotFoundException;
 use App\Exceptions\ProductNotFoundException;
 use App\Exceptions\UpstreamServiceException;
 use App\Http\Requests\StoreOrderRequest;
-use App\Models\Order;
+use App\Http\Resources\OrderResource;
 use App\Services\OrderService;
 use Illuminate\Http\JsonResponse;
 
@@ -37,28 +37,8 @@ class StoreOrderController extends Controller
             ], 503);
         }
 
-        return response()->json([
-            'data' => $this->orderResponse($order),
-        ], $order->wasRecentlyCreated ? 201 : 200);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function orderResponse(Order $order): array
-    {
-        return [
-            'id' => $order->id,
-            'user_id' => $order->user_id,
-            'status' => $order->status,
-            'total_amount' => $order->total_amount,
-            'currency' => $order->currency,
-            'items' => $order->items->map(fn ($item): array => [
-                'product_id' => $item->product_id,
-                'product_name' => $item->product_name,
-                'unit_price' => $item->unit_price,
-                'quantity' => $item->quantity,
-            ])->all(),
-        ];
+        return (new OrderResource($order))
+            ->response()
+            ->setStatusCode($order->wasRecentlyCreated ? 201 : 200);
     }
 }
