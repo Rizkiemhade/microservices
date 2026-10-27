@@ -7,6 +7,63 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Order API contract
+
+### Create an order
+
+`POST /api/orders` accepts JSON with a user ID and one or more product IDs and
+quantities. The optional `idempotency_key` lets a client safely retry a checkout.
+Product names, prices, and the order total are resolved by the service; clients
+must not send prices or totals.
+
+```json
+{
+  "user_id": 42,
+  "items": [
+    {
+      "product_id": 7,
+      "quantity": 2
+    }
+  ],
+  "idempotency_key": "checkout-42-001"
+}
+```
+
+On success, the API responds with HTTP `201` and an order representation:
+
+```json
+{
+  "data": {
+    "id": 101,
+    "user_id": 42,
+    "status": "pending",
+    "total_amount": "50000.00",
+    "currency": "IDR",
+    "items": [
+      {
+        "product_id": 7,
+        "product_name": "Example product",
+        "unit_price": "25000.00",
+        "quantity": 2
+      }
+    ]
+  }
+}
+```
+
+Invalid input responds with HTTP `422` and Laravel's standard validation body:
+
+```json
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "items.0.quantity": [
+      "The items.0.quantity field is required."
+    ]
+  }
+}
+```
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
