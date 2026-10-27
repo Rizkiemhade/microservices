@@ -84,6 +84,27 @@ endpoint returns `404` when the order does not exist or does not belong to the
 requested user. The list response uses Laravel pagination fields (`data`,
 `links`, and `meta`).
 
+### Update order status
+
+Change a user's order status with:
+
+```text
+PATCH /api/users/{userId}/orders/{orderId}/status
+```
+
+The JSON body contains the target status:
+
+```json
+{
+  "status": "processing"
+}
+```
+
+Allowed transitions are `pending` to `processing` or `cancelled`, and
+`processing` to `completed` or `cancelled`. `completed` and `cancelled` are
+terminal states. Unknown statuses, repeated statuses, and disallowed
+transitions return HTTP `422`; orders outside the requested user return `404`.
+
 ### Service URLs
 
 The Order Service reads the Cart and Product Service base URLs from

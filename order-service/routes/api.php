@@ -9,3 +9,6 @@ Route::get('/users/{userId}/orders', [OrderController::class, 'index'])->whereNu
 Route::get('/users/{userId}/orders/{orderId}', [OrderController::class, 'show'])
     ->whereNumber('userId')
     ->whereNumber('orderId');
+Route::patch('/users/{userId}/orders/{orderId}/status', [OrderController::class, 'updateStatus'])
+    ->whereNumber('userId')
+    ->whereNumber('orderId');
