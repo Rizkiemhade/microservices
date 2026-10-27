@@ -64,6 +64,13 @@ Invalid input responds with HTTP `422` and Laravel's standard validation body:
 }
 ```
 
+### Service URLs
+
+The Order Service reads the Cart and Product Service base URLs from
+`CART_SERVICE_URL` and `PRODUCT_SERVICE_URL`. Local defaults are
+`http://localhost:3001` and `http://localhost:3000`. Each client uses its own
+`*_TIMEOUT` and `*_CONNECT_TIMEOUT` settings, in seconds.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
