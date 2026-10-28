@@ -9,6 +9,74 @@
 
 ## Order API contract
 
+## Local and Docker workflows
+
+### Run locally
+
+From `order-service`, install dependencies and prepare the local SQLite database:
+
+```powershell
+composer install
+if (-not (Test-Path .env)) {
+  Copy-Item .env.example .env
+  php artisan key:generate
+}
+php artisan migrate
+php artisan serve --host=127.0.0.1 --port=3003
+```
+
+The local `.env.example` uses SQLite and expects Product Service at
+`http://localhost:3000` and Cart Service at `http://localhost:3001`. Start those
+services too when testing a real checkout.
+
+Run the Order Service tests from the same directory:
+
+```powershell
+php artisan test
+```
+
+### Run the complete Docker Compose stack
+
+From the repository root, build and start Product, Cart, and Order services with
+their databases:
+
+```powershell
+docker compose up --build -d
+docker compose ps
+```
+
+The Order Service container applies pending migrations at startup. To inspect
+migrations or run tests manually:
+
+```powershell
+docker compose exec order-service php artisan migrate:status
+docker compose exec order-service php artisan test
+```
+
+Check service health at `http://localhost:3000/health`,
+`http://localhost:3001/up`, and `http://localhost:3003/up`. Stop the containers
+without deleting the database volumes with:
+
+```powershell
+docker compose down
+```
+
+To exercise checkout against the sample products (IDs 1–3), first put a product
+in the cart, then create an order:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:3001/carts `
+  -ContentType 'application/json' `
+  -Body '{"user_id":42,"product_id":1,"quantity":2}'
+
+Invoke-RestMethod -Method Post -Uri http://localhost:3003/api/orders `
+  -ContentType 'application/json' `
+  -Body '{"user_id":42,"idempotency_key":"checkout-42-001"}'
+```
+
+The Compose database passwords are development defaults; replace them with
+managed secrets before deploying outside a local development environment.
+
 ### Create an order
 
 `POST /api/orders` accepts a user ID and an optional idempotency key. The Order

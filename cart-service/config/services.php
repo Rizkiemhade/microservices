@@ -35,7 +35,9 @@ return [
         ],
     ],
 
-    'product'=> [
+    'product' => [
         'url' => env('PRODUCT_SERVICE_URL', 'http://localhost:3000'),
+        'timeout' => (int) env('PRODUCT_SERVICE_TIMEOUT', 5),
+        'connect_timeout' => (int) env('PRODUCT_SERVICE_CONNECT_TIMEOUT', 2),
     ],
 ];

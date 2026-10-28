@@ -11,6 +11,113 @@ services:
     depends_on:
       product-db:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:3000/health').then((response) =>
+          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      retries: 5
+      start_period: 20s
+      timeout: 5s
+
+  cart-service:
+    build: ./cart-service
+    ports:
+      - "3001:3001"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_URL: http://localhost:3001
+      DB_CONNECTION: pgsql
+      DB_HOST: cart-db
+      DB_PORT: 5432
+      DB_DATABASE: cartdb
+      DB_USERNAME: appuser
+      DB_PASSWORD: apppassword
+      PRODUCT_SERVICE_URL: http://product-service:3000
+      PRODUCT_SERVICE_TIMEOUT: 5
+      PRODUCT_SERVICE_CONNECT_TIMEOUT: 2
+      LOG_CHANNEL: stderr
+    depends_on:
+      cart-db:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          php -r '$$context = stream_context_create(["http" => ["timeout" => 2]]);
+          exit(@file_get_contents("http://127.0.0.1:3001/up", false, $$context) === false ? 1 : 0);'
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
+
+  cart-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cartdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+    volumes:
+      - cart-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d cartdb"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  order-service:
+    build: ./order-service
+    ports:
+      - "3003:3003"
+    environment:
+      APP_NAME: Order Service
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_URL: http://localhost:3003
+      DB_CONNECTION: mysql
+      DB_HOST: order-db
+      DB_PORT: 3306
+      DB_DATABASE: ordersdb
+      DB_USERNAME: orderuser
+      DB_PASSWORD: orderpassword
+      CART_SERVICE_URL: http://cart-service:3001
+      CART_SERVICE_TIMEOUT: 5
+      CART_SERVICE_CONNECT_TIMEOUT: 2
+      PRODUCT_SERVICE_URL: http://product-service:3000
+      PRODUCT_SERVICE_TIMEOUT: 5
+      PRODUCT_SERVICE_CONNECT_TIMEOUT: 2
+      SESSION_DRIVER: array
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      LOG_CHANNEL: stderr
+    depends_on:
+      order-db:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+
+  order-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ordersdb
+      MYSQL_USER: orderuser
+      MYSQL_PASSWORD: orderpassword
+      MYSQL_ROOT_PASSWORD: orderrootpassword
+    volumes:
+      - order-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uorderuser -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
 
   product-db:
     image: mysql:8.0
@@ -31,3 +138,5 @@ services:
 
 volumes:
   product-db-data:
+  cart-db-data:
+  order-db-data:
