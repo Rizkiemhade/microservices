@@ -7,33 +7,9 @@ use PHPUnit\Framework\TestCase;
 
 class OrderStatusTest extends TestCase
 {
-    public function test_it_allows_only_the_defined_status_transitions(): void
+    public function test_order_status_cases(): void
     {
-        $allowedTransitions = [
-            OrderStatus::Pending->value => [
-                OrderStatus::Processing,
-                OrderStatus::Cancelled,
-            ],
-            OrderStatus::Processing->value => [
-                OrderStatus::Completed,
-                OrderStatus::Cancelled,
-            ],
-            OrderStatus::Completed->value => [],
-            OrderStatus::Cancelled->value => [],
-        ];
-
-        foreach ($allowedTransitions as $currentValue => $allowedTargets) {
-            $current = OrderStatus::from($currentValue);
-
-            foreach (OrderStatus::cases() as $target) {
-                $expected = in_array($target, $allowedTargets, true);
-
-                $this->assertSame(
-                    $expected,
-                    $current->canTransitionTo($target),
-                    "{$current->value} -> {$target->value}",
-                );
-            }
-        }
+        $this->assertSame('PENDING', OrderStatus::PENDING->value);
+        $this->assertSame('PAID', OrderStatus::PAID->value);
     }
 }

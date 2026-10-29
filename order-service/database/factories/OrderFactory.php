@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\OrderStatus;
 use App\Models\Order;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -14,10 +15,8 @@ class OrderFactory extends Factory
     {
         return [
             'user_id' => fake()->numberBetween(1, 10000),
-            'status' => 'pending',
-            'total_amount' => fake()->randomFloat(2, 1, 1000000),
-            'currency' => 'IDR',
-            'idempotency_key' => null,
+            'status' => OrderStatus::PENDING->value,
+            'total_amount' => fake()->randomFloat(2, 10000, 1000000),
         ];
     }
 }

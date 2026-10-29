@@ -19,6 +19,6 @@ USER www-data
 EXPOSE 3003
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD php -r '$context = stream_context_create(["http" => ["timeout" => 2]]); exit(@file_get_contents("http://127.0.0.1:3003/up", false, $context) === false ? 1 : 0);'
+    CMD php -r '$context = stream_context_create(["http" => ["timeout" => 2]]); exit(@file_get_contents("http://127.0.0.1:3003/health", false, $context) === false ? 1 : 0);'
 
 CMD ["sh", "-c", "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=3003"]

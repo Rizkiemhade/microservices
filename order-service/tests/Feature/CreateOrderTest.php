@@ -2,12 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Services\OrderService;
+use App\Models\Order;
+use App\Models\OrderItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use RuntimeException;
 use Tests\TestCase;
 
 class CreateOrderTest extends TestCase
@@ -28,193 +27,210 @@ class CreateOrderTest extends TestCase
         ]);
     }
 
-    public function test_checkout_creates_order_with_product_snapshots_and_server_calculated_total(): void
+    public function test_health_check_endpoint(): void
     {
-        $this->fakeCart([
-            ['product_id' => 7, 'quantity' => 2],
-            ['product_id' => 8, 'quantity' => 3],
-        ]);
-        $this->fakeProduct(7, 'Keyboard', '19.99');
-        $this->fakeProduct(8, 'Cable', '0.01');
+        $response = $this->getJson('/health');
 
-        $response = $this->postJson('/api/orders', [
-            'user_id' => 42,
-            'idempotency_key' => 'checkout-42-001',
+        $response->assertOk()
+            ->assertJson([
+                'status' => 'ok',
+                'service' => 'order-service',
+            ]);
+    }
+
+    public function test_checkout_creates_order_successfully(): void
+    {
+        $this->fakeCart(7, [
+            ['product_id' => 1, 'quantity' => 2],
+            ['product_id' => 2, 'quantity' => 1],
+        ]);
+        $this->fakeProduct(1, 'Keyboard Mekanikal', '450000.00', 25);
+        $this->fakeProduct(2, 'Mouse Wireless', '150000.00', 40);
+        $this->fakeClearCart(7);
+
+        $response = $this->postJson('/orders', [
+            'user_id' => 7,
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.user_id', 42)
-            ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.total_amount', '40.01')
-            ->assertJsonPath('data.currency', 'IDR')
-            ->assertJsonPath('data.items.0.product_name', 'Keyboard')
-            ->assertJsonPath('data.items.0.unit_price', '19.99')
+            ->assertJsonPath('message', 'Pesanan berhasil dibuat')
+            ->assertJsonPath('data.user_id', 7)
+            ->assertJsonPath('data.status', 'PENDING')
+            ->assertJsonPath('data.total_amount', 1050000)
+            ->assertJsonPath('data.items.0.product_id', 1)
+            ->assertJsonPath('data.items.0.product_name', 'Keyboard Mekanikal')
+            ->assertJsonPath('data.items.0.unit_price', 450000)
             ->assertJsonPath('data.items.0.quantity', 2)
-            ->assertJsonPath('data.items.1.product_name', 'Cable')
-            ->assertJsonPath('data.items.1.unit_price', '0.01')
-            ->assertJsonMissingPath('data.idempotency_key');
+            ->assertJsonPath('data.items.0.subtotal', 900000)
+            ->assertJsonPath('data.items.1.product_id', 2)
+            ->assertJsonPath('data.items.1.product_name', 'Mouse Wireless')
+            ->assertJsonPath('data.items.1.unit_price', 150000)
+            ->assertJsonPath('data.items.1.quantity', 1)
+            ->assertJsonPath('data.items.1.subtotal', 150000);
 
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_items', 2);
         $this->assertDatabaseHas('orders', [
-            'user_id' => 42,
-            'total_amount' => '40.01',
-            'idempotency_key' => 'checkout-42-001',
+            'user_id' => 7,
+            'status' => 'PENDING',
+            'total_amount' => 1050000,
         ]);
         $this->assertDatabaseHas('order_items', [
-            'product_id' => 7,
-            'product_name' => 'Keyboard',
-            'unit_price' => '19.99',
+            'product_id' => 1,
+            'product_name' => 'Keyboard Mekanikal',
+            'unit_price' => 450000,
             'quantity' => 2,
-        ]);
-    }
-
-    public function test_checkout_rejects_an_empty_cart_without_creating_an_order(): void
-    {
-        $this->fakeCart([]);
-
-        $this->postJson('/api/orders', ['user_id' => 42])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('cart');
-
-        $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/products/'));
-    }
-
-    public function test_checkout_rejects_client_supplied_items_and_prices_before_calling_services(): void
-    {
-        $this->postJson('/api/orders', [
-            'user_id' => 42,
-            'items' => [['product_id' => 7, 'quantity' => 1]],
-            'total_amount' => 1,
-        ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['items', 'total_amount']);
-
-        $this->assertDatabaseCount('orders', 0);
-        Http::assertNothingSent();
-    }
-
-    public function test_checkout_reports_a_missing_product_without_creating_an_order(): void
-    {
-        $this->fakeCart([['product_id' => 7, 'quantity' => 1]]);
-        Http::fake([
-            'http://product.test/products/7' => Http::response(['message' => 'Not found'], 404),
+            'subtotal' => 900000,
         ]);
 
-        $this->postJson('/api/orders', ['user_id' => 42])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('cart');
-
-        $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
+        // Verifikasi cart-service dipanggil untuk mengosongkan keranjang
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE' && $request->url() === 'http://cart.test/carts/7');
     }
 
-    public function test_checkout_reports_a_missing_cart_without_creating_an_order(): void
+    public function test_checkout_fails_validation_when_body_missing_user_id(): void
     {
+        $response = $this->postJson('/orders', []);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Data yang dikirim tidak valid')
+            ->assertJsonValidationErrors('user_id')
+            ->assertJsonPath('errors.user_id.0', 'Field user_id wajib diisi');
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_checkout_fails_with_409_when_cart_is_empty(): void
+    {
+        $this->fakeCart(7, []);
+
+        $response = $this->postJson('/orders', ['user_id' => 7]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('message', 'Keranjang belanja kosong');
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_checkout_fails_with_409_when_product_not_found_in_product_service(): void
+    {
+        $this->fakeCart(7, [['product_id' => 99, 'quantity' => 1]]);
         Http::fake([
-            'http://cart.test/carts/42' => Http::response(['message' => 'Not found'], 404),
+            'http://product.test/products/99' => Http::response(['message' => 'Produk tidak ditemukan'], 404),
         ]);
 
-        $this->postJson('/api/orders', ['user_id' => 42])
-            ->assertNotFound()
-            ->assertJsonPath('message', 'Cart for user 42 was not found.');
+        $response = $this->postJson('/orders', ['user_id' => 7]);
 
+        $response->assertStatus(409);
         $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
     }
 
-    public function test_checkout_reports_product_service_timeout_without_creating_an_order(): void
+    public function test_checkout_fails_with_409_when_stock_is_insufficient(): void
     {
-        $this->fakeCart([['product_id' => 7, 'quantity' => 1]]);
+        $this->fakeCart(7, [['product_id' => 3, 'quantity' => 11]]);
+        $this->fakeProduct(3, 'Monitor 24 Inch', '2000000.00', 10);
+
+        $response = $this->postJson('/orders', ['user_id' => 7]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('message', 'Stok Monitor 24 Inch tidak mencukupi: diminta 11, tersedia 10');
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_checkout_fails_with_503_when_product_service_is_down(): void
+    {
+        $this->fakeCart(7, [['product_id' => 1, 'quantity' => 1]]);
         Http::fake([
-            'http://product.test/products/7' => function () {
+            'http://product.test/products/1' => function () {
                 throw new ConnectionException('cURL error 28: Operation timed out.');
             },
         ]);
 
-        $this->postJson('/api/orders', ['user_id' => 42])
-            ->assertServiceUnavailable()
-            ->assertJsonPath('service', 'Product Service');
+        $response = $this->postJson('/orders', ['user_id' => 7]);
+
+        $response->assertStatus(503)
+            ->assertJsonPath('message', 'Product service tidak dapat dihubungi, coba lagi nanti');
 
         $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
     }
 
-    public function test_checkout_rejects_a_total_larger_than_the_order_column_can_store(): void
-    {
-        $this->fakeCart([['product_id' => 7, 'quantity' => 2]]);
-        $this->fakeProduct(7, 'Expensive item', '9999999999.99');
-
-        $this->postJson('/api/orders', ['user_id' => 42])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('cart');
-
-        $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
-    }
-
-    public function test_checkout_reports_upstream_failure_without_creating_an_order(): void
+    public function test_checkout_fails_with_503_when_cart_service_is_down(): void
     {
         Http::fake([
-            'http://cart.test/carts/42' => Http::response(['message' => 'Unavailable'], 503),
+            'http://cart.test/carts/7' => function () {
+                throw new ConnectionException('cURL error 7: Failed to connect.');
+            },
         ]);
 
-        $this->postJson('/api/orders', ['user_id' => 42])
-            ->assertServiceUnavailable()
-            ->assertJsonPath('service', 'Cart Service');
+        $response = $this->postJson('/orders', ['user_id' => 7]);
+
+        $response->assertStatus(503)
+            ->assertJsonPath('message', 'Cart service tidak dapat dihubungi, coba lagi nanti');
 
         $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
     }
 
-    public function test_checkout_replays_an_existing_order_for_the_same_idempotency_key(): void
+    public function test_checkout_snapshots_price_correctly(): void
     {
-        $this->fakeCart([['product_id' => 7, 'quantity' => 1]]);
-        $this->fakeProduct(7, 'Keyboard', '25.00');
+        $this->fakeCart(7, [['product_id' => 1, 'quantity' => 1]]);
+        $this->fakeProduct(1, 'Keyboard Mekanikal', '450000.00', 25);
+        $this->fakeClearCart(7);
 
-        $payload = ['user_id' => 42, 'idempotency_key' => 'retry-001'];
-        $firstResponse = $this->postJson('/api/orders', $payload)->assertCreated();
-        $orderId = $firstResponse->json('data.id');
+        $response = $this->postJson('/orders', ['user_id' => 7]);
+        $response->assertCreated();
 
-        $this->postJson('/api/orders', $payload)
-            ->assertOk()
-            ->assertJsonPath('data.id', $orderId);
+        $orderId = $response->json('data.id');
+
+        // Simulasi perubahan harga di product-service setelah pesanan dibuat
+        $this->fakeProduct(1, 'Keyboard Mekanikal', '999999.00', 25);
+
+        // Detail pesanan lama harus tetap memakai harga snapshot awal
+        $getDetail = $this->getJson("/orders/{$orderId}");
+        $getDetail->assertOk()
+            ->assertJsonPath('data.total_amount', 450000)
+            ->assertJsonPath('data.items.0.unit_price', 450000);
+    }
+
+    public function test_order_is_not_rolled_back_if_cart_clear_fails(): void
+    {
+        $this->fakeCart(7, [['product_id' => 1, 'quantity' => 1]]);
+        $this->fakeProduct(1, 'Keyboard Mekanikal', '450000.00', 25);
+
+        // Simulasi kegagalan DELETE cart-service
+        Http::fake([
+            'http://cart.test/carts/7' => function ($request) {
+                if ($request->method() === 'DELETE') {
+                    throw new ConnectionException('Cart service unavailable on delete');
+                }
+                return Http::response([
+                    'data' => [
+                        'user_id' => 7,
+                        'items' => [['product_id' => 1, 'quantity' => 1]],
+                        'total_quantity' => 1,
+                    ],
+                ]);
+            },
+            'http://product.test/products/1' => Http::response([
+                'data' => ['id' => 1, 'name' => 'Keyboard Mekanikal', 'price' => '450000.00', 'stock' => 25],
+            ]),
+        ]);
+
+        // Pesanan harus TETAP berhasil dibuat (201)
+        $response = $this->postJson('/orders', ['user_id' => 7]);
+
+        $response->assertCreated()
+            ->assertJsonPath('message', 'Pesanan berhasil dibuat');
 
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_items', 1);
-        Http::assertSentCount(2);
     }
 
-    public function test_order_and_items_are_rolled_back_if_an_item_cannot_be_saved(): void
-    {
-        $this->fakeCart([['product_id' => 7, 'quantity' => 1]]);
-        $this->fakeProduct(7, 'Keyboard', '25.00');
-
-        DB::connection()->beforeExecuting(function (string $query): void {
-            if (str_contains($query, 'insert into "order_items"')) {
-                throw new RuntimeException('Simulated order item insert failure.');
-            }
-        });
-
-        try {
-            app(OrderService::class)->createFromCart(42, null);
-            $this->fail('Expected the item insert failure to escape the transaction.');
-        } catch (RuntimeException $exception) {
-            $this->assertSame('Simulated order item insert failure.', $exception->getMessage());
-        }
-
-        $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
-    }
-
-    private function fakeCart(array $items): void
+    private function fakeCart(int $userId, array $items): void
     {
         Http::fake([
-            'http://cart.test/carts/42' => Http::response([
+            "http://cart.test/carts/{$userId}" => Http::response([
                 'data' => [
-                    'user_id' => 42,
+                    'user_id' => $userId,
                     'items' => $items,
                     'total_quantity' => array_sum(array_column($items, 'quantity')),
                 ],
@@ -222,11 +238,31 @@ class CreateOrderTest extends TestCase
         ]);
     }
 
-    private function fakeProduct(int $id, string $name, string $price): void
+    private function fakeClearCart(int $userId): void
+    {
+        Http::fake([
+            "http://cart.test/carts/{$userId}" => function ($request) {
+                if ($request->method() === 'DELETE') {
+                    return Http::response([
+                        'message' => 'Keranjang berhasil dikosongkan',
+                        'data' => ['deleted_items' => 2],
+                    ], 200);
+                }
+                return Http::response([], 404);
+            },
+        ]);
+    }
+
+    private function fakeProduct(int $id, string $name, string $price, int $stock = 25): void
     {
         Http::fake([
             "http://product.test/products/{$id}" => Http::response([
-                'data' => ['id' => $id, 'name' => $name, 'price' => $price],
+                'data' => [
+                    'id' => $id,
+                    'name' => $name,
+                    'price' => $price,
+                    'stock' => $stock,
+                ],
             ]),
         ]);
     }

@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS products (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Data Contoh
+-- Data Contoh sesuai Spesifikasi UTS & Demo
 INSERT INTO products (name, description, price, stock, image) VALUES
-('Keyboard Mekanikal', 'Keyboard mekanikal switch blue', 500000, 25, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
-('Mouse Wireless', 'Mouse wireless dengan sensor optical', 350000, 10, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
-('Headset Gaming', 'Headset gaming dengan kualitas audio terbaik', 800000, 15, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+('Keyboard Mekanikal', 'Keyboard mekanikal switch blue', 450000.00, 25, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
+('Mouse Wireless', 'Mouse wireless dengan sensor optical', 150000.00, 40, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='),
+('Monitor 24 Inch', 'Monitor IPS 24 inch 144Hz', 2000000.00, 10, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');

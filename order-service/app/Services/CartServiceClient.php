@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
-use App\Exceptions\CartNotFoundException;
 use App\Exceptions\UpstreamServiceException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 class CartServiceClient
 {
@@ -14,48 +14,87 @@ class CartServiceClient
      */
     public function getCart(int $userId): array
     {
+        $baseUrl = rtrim(config('services.cart.url', 'http://localhost:3001'), '/');
+        $timeout = min((int) config('services.cart.timeout', 5), 5);
+        $connectTimeout = (int) config('services.cart.connect_timeout', 2);
+
         try {
             $response = Http::acceptJson()
-                ->connectTimeout(config('services.cart.connect_timeout'))
-                ->timeout(config('services.cart.timeout'))
-                ->get(rtrim(config('services.cart.url'), '/')."/carts/{$userId}");
+                ->connectTimeout($connectTimeout)
+                ->timeout($timeout)
+                ->get("{$baseUrl}/carts/{$userId}");
         } catch (ConnectionException $exception) {
-            throw new UpstreamServiceException('Cart Service', 'connection timed out or failed', previous: $exception);
-        }
-
-        if ($response->status() === 404) {
-            throw new CartNotFoundException($userId);
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Connection failure to Cart Service at {$baseUrl}: {$exception->getMessage()}",
+                $exception,
+            );
+        } catch (Throwable $exception) {
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Unexpected failure calling Cart Service: {$exception->getMessage()}",
+                $exception,
+            );
         }
 
         if (! $response->successful()) {
-            throw new UpstreamServiceException('Cart Service', 'unexpected response', $response->status());
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Cart Service returned HTTP {$response->status()} for user {$userId}",
+            );
         }
 
         $cart = $response->json('data');
 
-        if (! is_array($cart)
-            || ! isset($cart['user_id'])
-            || ! is_numeric($cart['user_id'])
-            || (int) $cart['user_id'] !== $userId
-            || (float) $cart['user_id'] !== (float) (int) $cart['user_id']
-            || ! isset($cart['items'])
-            || ! is_array($cart['items'])) {
-            throw new UpstreamServiceException('Cart Service', 'invalid response format');
-        }
-
-        foreach ($cart['items'] as $item) {
-            if (! is_array($item)
-                || ! isset($item['product_id'], $item['quantity'])
-                || ! is_numeric($item['product_id'])
-                || ! is_numeric($item['quantity'])
-                || (int) $item['product_id'] < 1
-                || (int) $item['quantity'] < 1
-                || (float) $item['product_id'] !== (float) (int) $item['product_id']
-                || (float) $item['quantity'] !== (float) (int) $item['quantity']) {
-                throw new UpstreamServiceException('Cart Service', 'invalid cart item format');
-            }
+        if (! is_array($cart) || ! isset($cart['items']) || ! is_array($cart['items'])) {
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Cart Service returned invalid payload format for user {$userId}",
+            );
         }
 
         return $cart;
+    }
+
+    public function clearCart(int $userId): bool
+    {
+        $baseUrl = rtrim(config('services.cart.url', 'http://localhost:3001'), '/');
+        $timeout = min((int) config('services.cart.timeout', 5), 5);
+        $connectTimeout = (int) config('services.cart.connect_timeout', 2);
+
+        try {
+            $response = Http::acceptJson()
+                ->connectTimeout($connectTimeout)
+                ->timeout($timeout)
+                ->delete("{$baseUrl}/carts/{$userId}");
+        } catch (ConnectionException $exception) {
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Connection failure when clearing Cart Service for user {$userId}: {$exception->getMessage()}",
+                $exception,
+            );
+        } catch (Throwable $exception) {
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Unexpected failure clearing Cart Service for user {$userId}: {$exception->getMessage()}",
+                $exception,
+            );
+        }
+
+        if (! $response->successful()) {
+            throw new UpstreamServiceException(
+                'Cart service',
+                'Cart service tidak dapat dihubungi, coba lagi nanti',
+                "Cart Service returned HTTP {$response->status()} when clearing cart for user {$userId}",
+            );
+        }
+
+        return true;
     }
 }

@@ -11,14 +11,11 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
-            $table->string('status')->default('pending');
+            $table->string('status')->default('PENDING');
             $table->decimal('total_amount', 12, 2);
-            $table->char('currency', 3)->default('IDR');
-            $table->string('idempotency_key', 128)->nullable();
             $table->timestamps();
 
             $table->index(['user_id', 'created_at']);
-            $table->unique(['user_id', 'idempotency_key']);
         });
     }
 

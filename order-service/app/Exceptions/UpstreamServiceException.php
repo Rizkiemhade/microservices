@@ -8,17 +8,15 @@ use Throwable;
 class UpstreamServiceException extends RuntimeException
 {
     public function __construct(
-        public readonly string $service,
-        string $reason,
-        ?int $status = null,
+        public readonly string $serviceName,
+        public readonly string $clientMessage,
+        public readonly string $technicalMessage = '',
         ?Throwable $previous = null,
     ) {
-        $message = "{$service} request failed: {$reason}";
-
-        if ($status !== null) {
-            $message .= " (HTTP {$status})";
-        }
-
-        parent::__construct($message, $status ?? 0, $previous);
+        parent::__construct(
+            $technicalMessage ?: $clientMessage,
+            0,
+            $previous,
+        );
     }
 }

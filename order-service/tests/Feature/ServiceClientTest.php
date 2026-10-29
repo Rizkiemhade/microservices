@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Exceptions\CartNotFoundException;
 use App\Exceptions\ProductNotFoundException;
 use App\Exceptions\UpstreamServiceException;
 use App\Services\CartServiceClient;
@@ -49,12 +48,27 @@ class ServiceClientTest extends TestCase
         Http::assertSent(fn ($request) => $request->url() === 'http://cart.test/carts/42');
     }
 
+    public function test_cart_client_can_clear_cart(): void
+    {
+        Http::fake([
+            'http://cart.test/carts/42' => Http::response([
+                'message' => 'Keranjang berhasil dikosongkan',
+                'data' => ['deleted_items' => 2],
+            ]),
+        ]);
+
+        $result = (new CartServiceClient)->clearCart(42);
+
+        $this->assertTrue($result);
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE' && $request->url() === 'http://cart.test/carts/42');
+    }
+
     public function test_product_client_returns_product_data_from_product_service(): void
     {
         Http::fake([
             'http://product.test/products/7' => Http::response([
                 'message' => 'Success',
-                'data' => ['id' => 7, 'name' => 'Keyboard', 'price' => '25000.00'],
+                'data' => ['id' => 7, 'name' => 'Keyboard', 'price' => '25000.00', 'stock' => 10],
             ]),
         ]);
 
@@ -64,17 +78,6 @@ class ServiceClientTest extends TestCase
         $this->assertSame('Keyboard', $product['name']);
         $this->assertSame('25000.00', $product['price']);
         Http::assertSent(fn ($request) => $request->url() === 'http://product.test/products/7');
-    }
-
-    public function test_cart_client_reports_a_missing_cart(): void
-    {
-        Http::fake([
-            'http://cart.test/carts/42' => Http::response(['message' => 'Not found'], 404),
-        ]);
-
-        $this->expectException(CartNotFoundException::class);
-
-        (new CartServiceClient)->getCart(42);
     }
 
     public function test_product_client_reports_a_missing_product(): void
@@ -98,8 +101,7 @@ class ServiceClientTest extends TestCase
             (new CartServiceClient)->getCart(42);
             $this->fail('Expected Cart Service failure to be reported.');
         } catch (UpstreamServiceException $exception) {
-            $this->assertSame('Cart Service', $exception->service);
-            $this->assertSame(503, $exception->getCode());
+            $this->assertSame('Cart service', $exception->serviceName);
         }
     }
 
@@ -115,57 +117,8 @@ class ServiceClientTest extends TestCase
             (new ProductServiceClient)->getProduct(7);
             $this->fail('Expected Product Service connection failure to be reported.');
         } catch (UpstreamServiceException $exception) {
-            $this->assertSame('Product Service', $exception->service);
+            $this->assertSame('Product service', $exception->serviceName);
             $this->assertInstanceOf(ConnectionException::class, $exception->getPrevious());
-            $this->assertStringContainsString('timed out', $exception->getMessage());
         }
-    }
-
-    public function test_clients_reject_malformed_upstream_data(): void
-    {
-        Http::fake([
-            'http://cart.test/carts/42' => Http::response(['data' => ['items' => 'invalid']]),
-            'http://product.test/products/7' => Http::response(['data' => ['id' => 7]]),
-        ]);
-
-        try {
-            (new CartServiceClient)->getCart(42);
-            $this->fail('Expected malformed cart response to be reported.');
-        } catch (UpstreamServiceException $exception) {
-            $this->assertSame('Cart Service', $exception->service);
-        }
-
-        try {
-            (new ProductServiceClient)->getProduct(7);
-            $this->fail('Expected malformed product response to be reported.');
-        } catch (UpstreamServiceException $exception) {
-            $this->assertSame('Product Service', $exception->service);
-        }
-    }
-
-    public function test_cart_client_rejects_a_cart_for_another_user(): void
-    {
-        Http::fake([
-            'http://cart.test/carts/42' => Http::response([
-                'data' => ['user_id' => 99, 'items' => []],
-            ]),
-        ]);
-
-        $this->expectException(UpstreamServiceException::class);
-
-        (new CartServiceClient)->getCart(42);
-    }
-
-    public function test_product_client_rejects_a_different_product_id(): void
-    {
-        Http::fake([
-            'http://product.test/products/7' => Http::response([
-                'data' => ['id' => 8, 'name' => 'Keyboard', 'price' => '25000.00'],
-            ]),
-        ]);
-
-        $this->expectException(UpstreamServiceException::class);
-
-        (new ProductServiceClient)->getProduct(7);
     }
 }

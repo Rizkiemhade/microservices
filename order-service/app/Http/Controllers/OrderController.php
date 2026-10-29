@@ -2,57 +2,163 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\OrderStatus;
+use App\Exceptions\EmptyCartException;
+use App\Exceptions\InsufficientStockException;
 use App\Exceptions\InvalidOrderStatusTransitionException;
-use App\Http\Requests\UpdateOrderStatusRequest;
+use App\Exceptions\OrderNotFoundException;
+use App\Exceptions\ProductNotFoundException;
+use App\Exceptions\UpstreamServiceException;
+use App\Http\Requests\GetUserOrdersRequest;
+use App\Http\Requests\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
-use App\Models\Order;
-use App\Services\OrderStatusService;
+use App\Services\OrderService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class OrderController extends Controller
 {
-    public function index(int $userId): AnonymousResourceCollection
-    {
-        $orders = Order::query()
-            ->where('user_id', $userId)
-            ->with('items')
-            ->latest('id')
-            ->paginate(15);
+    public function __construct(
+        private OrderService $orderService,
+    ) {}
 
-        return OrderResource::collection($orders);
+    public function health(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'ok',
+            'service' => 'order-service',
+        ]);
     }
 
-    public function show(int $userId, int $orderId): OrderResource
+    public function store(StoreOrderRequest $request): JsonResponse
     {
-        $order = Order::query()
-            ->where('user_id', $userId)
-            ->with('items')
-            ->findOrFail($orderId);
+        $userId = (int) $request->validated('user_id');
 
-        return new OrderResource($order);
-    }
-
-    public function updateStatus(
-        UpdateOrderStatusRequest $request,
-        int $userId,
-        int $orderId,
-        OrderStatusService $orderStatusService,
-    ): OrderResource|JsonResponse {
         try {
-            $order = $orderStatusService->transition(
-                $userId,
-                $orderId,
-                OrderStatus::from($request->validated('status')),
+            $order = $this->orderService->createFromCart($userId);
+
+            return response()->json([
+                'message' => 'Pesanan berhasil dibuat',
+                'data' => new OrderResource($order),
+            ], 201);
+        } catch (EmptyCartException|ProductNotFoundException|InsufficientStockException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], 409);
+        } catch (UpstreamServiceException $exception) {
+            return $this->handleUpstreamError($exception);
+        } catch (Throwable $exception) {
+            return $this->handleServerError($exception, 'membuat pesanan');
+        }
+    }
+
+    public function show(string $id): JsonResponse
+    {
+        if (! ctype_digit($id)) {
+            return response()->json([
+                'message' => "Pesanan dengan id {$id} tidak ditemukan",
+            ], 404);
+        }
+
+        try {
+            $order = $this->orderService->getOrderById((int) $id);
+
+            return response()->json([
+                'message' => 'Berhasil mengambil pesanan',
+                'data' => new OrderResource($order),
+            ]);
+        } catch (OrderNotFoundException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], 404);
+        } catch (Throwable $exception) {
+            return $this->handleServerError($exception, 'mengambil pesanan');
+        }
+    }
+
+    public function userOrders(GetUserOrdersRequest $request, string $userId): JsonResponse
+    {
+        if (! ctype_digit($userId)) {
+            return response()->json([
+                'message' => 'User tidak ditemukan',
+            ], 404);
+        }
+
+        try {
+            $orders = $this->orderService->getUserOrders(
+                (int) $userId,
+                $request->validated('status'),
             );
+
+            return response()->json([
+                'message' => 'Berhasil mengambil daftar pesanan',
+                'data' => OrderResource::collection($orders),
+            ]);
+        } catch (Throwable $exception) {
+            return $this->handleServerError($exception, 'mengambil daftar pesanan');
+        }
+    }
+
+    public function pay(string $id): JsonResponse
+    {
+        if (! ctype_digit($id)) {
+            return response()->json([
+                'message' => "Pesanan dengan id {$id} tidak ditemukan",
+            ], 404);
+        }
+
+        try {
+            $order = $this->orderService->payOrder((int) $id);
+
+            return response()->json([
+                'message' => 'Pesanan berhasil dibayar',
+                'data' => new OrderResource($order),
+            ]);
+        } catch (OrderNotFoundException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], 404);
         } catch (InvalidOrderStatusTransitionException $exception) {
             return response()->json([
                 'message' => $exception->getMessage(),
-                'errors' => ['status' => [$exception->getMessage()]],
-            ], 422);
+            ], 409);
+        } catch (Throwable $exception) {
+            return $this->handleServerError($exception, 'membayar pesanan');
+        }
+    }
+
+    private function handleUpstreamError(UpstreamServiceException $e): JsonResponse
+    {
+        Log::error("Kegagalan memanggil service upstream ({$e->serviceName}): {$e->getMessage()}", [
+            'service' => $e->serviceName,
+            'exception' => $e,
+        ]);
+
+        $body = [
+            'message' => $e->clientMessage,
+        ];
+
+        if (config('app.debug')) {
+            $body['error'] = $e->getMessage();
+            $body['location'] = $e->getFile().':'.$e->getLine();
         }
 
-        return new OrderResource($order);
+        return response()->json($body, 503);
+    }
+
+    private function handleServerError(Throwable $e, string $action): JsonResponse
+    {
+        report($e);
+
+        $body = [
+            'message' => "Gagal {$action}",
+        ];
+
+        if (config('app.debug')) {
+            $body['error'] = $e->getMessage();
+            $body['location'] = $e->getFile().':'.$e->getLine();
+        }
+
+        return response()->json($body, 500);
     }
 }

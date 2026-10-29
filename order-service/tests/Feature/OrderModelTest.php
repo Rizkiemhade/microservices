@@ -23,17 +23,19 @@ class OrderModelTest extends TestCase
         ));
     }
 
-    public function test_order_amounts_are_cast_to_two_decimal_places(): void
+    public function test_order_and_item_attributes_and_subtotal(): void
     {
         $order = Order::factory()
             ->has(OrderItem::factory()->state([
                 'unit_price' => 12500,
                 'quantity' => 2,
+                'subtotal' => 25000,
             ]), 'items')
             ->create(['total_amount' => 25000]);
 
-        $this->assertSame('25000.00', $order->total_amount);
-        $this->assertSame('12500.00', $order->items->first()->unit_price);
+        $this->assertEquals(25000, $order->total_amount);
+        $this->assertEquals(12500, $order->items->first()->unit_price);
         $this->assertSame(2, $order->items->first()->quantity);
+        $this->assertEquals(25000, $order->items->first()->subtotal);
     }
 }

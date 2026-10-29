@@ -2,13 +2,12 @@
 
 namespace App\Exceptions;
 
-use App\Enums\OrderStatus;
 use DomainException;
 
 class InvalidOrderStatusTransitionException extends DomainException
 {
-    public function __construct(OrderStatus $current, OrderStatus $target)
+    public function __construct(string $currentStatus)
     {
-        parent::__construct("Order cannot transition from {$current->value} to {$target->value}.");
+        parent::__construct("Pesanan berstatus {$currentStatus}, hanya pesanan PENDING yang dapat dibayar");
     }
 }

@@ -70,6 +70,39 @@ services:
       retries: 5
       timeout: 5s
 
+  review-service:
+    build:
+      context: ./review-service
+      dockerfile: dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3002
+      FLASK_DEBUG: "0"
+      MONGO_URI: mongodb://appuser:apppassword@review-db:27017/?authSource=admin
+      MONGO_DB_NAME: reviewdb
+      PRODUCT_SERVICE_URL: http://product-service:3000
+    depends_on:
+      review-db:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+
+  review-db:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: appuser
+      MONGO_INITDB_ROOT_PASSWORD: apppassword
+    volumes:
+      - review-db-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+      timeout: 5s
+
   order-service:
     build: ./order-service
     ports:
@@ -102,6 +135,16 @@ services:
         condition: service_healthy
       product-service:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          php -r '$$context = stream_context_create(["http" => ["timeout" => 2]]);
+          exit(@file_get_contents("http://127.0.0.1:3003/health", false, $$context) === false ? 1 : 0);'
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
 
   order-db:
     image: mysql:8.0
@@ -110,6 +153,8 @@ services:
       MYSQL_USER: orderuser
       MYSQL_PASSWORD: orderpassword
       MYSQL_ROOT_PASSWORD: orderrootpassword
+    ports:
+      - "3308:3306"
     volumes:
       - order-db-data:/var/lib/mysql
     healthcheck:
@@ -140,3 +185,4 @@ volumes:
   product-db-data:
   cart-db-data:
   order-db-data:
+  review-db-data:

@@ -1,231 +1,60 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Order Service
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Service pemrosesan pesanan dan checkout untuk arsitektur microservices toko online (Laravel 11 & MySQL).
 
-## Order API contract
+---
 
-## Local and Docker workflows
+## 1. Daftar Endpoint API
 
-### Run locally
+| Method | Endpoint | Fungsi | Status Sukses | Status Gagal & Kondisi |
+|:---:|---|---|:---:|---|
+| `GET` | `/health` | Mengecek status service hidup | **200** | *(Tidak ada)* |
+| `POST` | `/orders` | Membuat pesanan baru dari keranjang belanja | **201** | **422**: Body tanpa `user_id`<br>**409**: Keranjang kosong / stok kurang / produk tidak ada<br>**503**: `cart-service` / `product-service` mati<br>**500**: Error internal server |
+| `GET` | `/orders/{id}` | Detail satu pesanan beserta item snapshot | **200** | **404**: Pesanan tidak ditemukan / ID bukan angka<br>**500**: Error internal server |
+| `GET` | `/orders/user/{userId}` | Riwayat pesanan user (filter opsional `?status=`) | **200** | **422**: Status tidak valid (bukan `PENDING`/`PAID`)<br>**404**: `userId` bukan angka<br>**500**: Error internal server |
+| `PATCH` | `/orders/{id}/pay` | Simulasi bayar: `PENDING` menjadi `PAID` | **200** | **404**: Pesanan tidak ditemukan / ID bukan angka<br>**409**: Status bukan `PENDING` (sudah `PAID`)<br>**500**: Error internal server |
 
-From `order-service`, install dependencies and prepare the local SQLite database:
+---
 
-```powershell
-composer install
-if (-not (Test-Path .env)) {
-  Copy-Item .env.example .env
-  php artisan key:generate
-}
-php artisan migrate
-php artisan serve --host=127.0.0.1 --port=3003
-```
+## 2. Struktur Database
 
-The local `.env.example` uses SQLite and expects Product Service at
-`http://localhost:3000` and Cart Service at `http://localhost:3001`. Start those
-services too when testing a real checkout.
+### Tabel `orders`
+| Kolom | Tipe Data | Keterangan |
+|---|---|---|
+| `id` | `BIGINT UNSIGNED (PK)` | Auto-increment ID pesanan |
+| `user_id` | `BIGINT UNSIGNED` | ID user pemilik pesanan |
+| `status` | `VARCHAR(255)` | Status pesanan (`PENDING` atau `PAID`) |
+| `total_amount` | `DECIMAL(12, 2)` | Total nominal pesanan |
+| `created_at` | `TIMESTAMP` | Waktu dibuat |
+| `updated_at` | `TIMESTAMP` | Waktu diperbarui |
 
-Run the Order Service tests from the same directory:
+### Tabel `order_items`
+| Kolom | Tipe Data | Keterangan |
+|---|---|---|
+| `id` | `BIGINT UNSIGNED (PK)` | Auto-increment ID item |
+| `order_id` | `BIGINT UNSIGNED (FK)` | Relasi ke `orders.id` (*cascade delete*) |
+| `product_id` | `BIGINT UNSIGNED` | ID produk |
+| `product_name` | `VARCHAR(255)` | Salinan nama produk saat transaksi (*snapshot*) |
+| `unit_price` | `DECIMAL(12, 2)` | Salinan harga satuan produk (*snapshot*) |
+| `quantity` | `INT UNSIGNED` | Kuantitas barang yang dipesan |
+| `subtotal` | `DECIMAL(12, 2)` | Subtotal per item (`unit_price * quantity`) |
+| `created_at` | `TIMESTAMP` | Waktu dibuat |
+| `updated_at` | `TIMESTAMP` | Waktu diperbarui |
 
-```powershell
-php artisan test
-```
+---
 
-### Run the complete Docker Compose stack
+## 3. Konfigurasi Environment
 
-From the repository root, build and start Product, Cart, and Order services with
-their databases:
-
-```powershell
-docker compose up --build -d
-docker compose ps
-```
-
-The Order Service container applies pending migrations at startup. To inspect
-migrations or run tests manually:
-
-```powershell
-docker compose exec order-service php artisan migrate:status
-docker compose exec order-service php artisan test
-```
-
-Check service health at `http://localhost:3000/health`,
-`http://localhost:3001/up`, and `http://localhost:3003/up`. Stop the containers
-without deleting the database volumes with:
-
-```powershell
-docker compose down
-```
-
-To exercise checkout against the sample products (IDs 1–3), first put a product
-in the cart, then create an order:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:3001/carts `
-  -ContentType 'application/json' `
-  -Body '{"user_id":42,"product_id":1,"quantity":2}'
-
-Invoke-RestMethod -Method Post -Uri http://localhost:3003/api/orders `
-  -ContentType 'application/json' `
-  -Body '{"user_id":42,"idempotency_key":"checkout-42-001"}'
-```
-
-The Compose database passwords are development defaults; replace them with
-managed secrets before deploying outside a local development environment.
-
-### Create an order
-
-`POST /api/orders` accepts a user ID and an optional idempotency key. The Order
-Service retrieves the user's cart from Cart Service, then verifies each product
-with Product Service. Clients must not send cart items, prices, or totals.
-
-```json
-{
-  "user_id": 42,
-  "idempotency_key": "checkout-42-001"
-}
-```
-
-On success, the API responds with HTTP `201` and an order representation. A
-retry using the same user and idempotency key returns the existing order with
-HTTP `200`.
-
-```json
-{
-  "data": {
-    "id": 101,
-    "user_id": 42,
-    "status": "pending",
-    "total_amount": "50000.00",
-    "currency": "IDR",
-    "items": [
-      {
-        "product_id": 7,
-        "product_name": "Example product",
-        "unit_price": "25000.00",
-        "quantity": 2
-      }
-    ]
-  }
-}
-```
-
-Invalid input or an empty cart responds with HTTP `422` and Laravel's standard
-validation body:
-
-```json
-{
-  "message": "The given data was invalid.",
-  "errors": {
-    "cart": [
-      "Cannot create an order from an empty cart."
-    ]
-  }
-}
-```
-
-A missing product responds with HTTP `422`. If Cart or Product Service is
-unavailable, the endpoint responds with HTTP `503` and does not create an order.
-The order and its product snapshots are persisted together in a database
-transaction.
-
-### Read orders
-
-Get one order belonging to a user:
-
-```text
-GET /api/users/{userId}/orders/{orderId}
-```
-
-List a user's orders (15 per page):
-
-```text
-GET /api/users/{userId}/orders
-```
-
-Both endpoints include the order status and its item snapshots. The detail
-endpoint returns `404` when the order does not exist or does not belong to the
-requested user. The list response uses Laravel pagination fields (`data`,
-`links`, and `meta`).
-
-### Update order status
-
-Change a user's order status with:
-
-```text
-PATCH /api/users/{userId}/orders/{orderId}/status
-```
-
-The JSON body contains the target status:
-
-```json
-{
-  "status": "processing"
-}
-```
-
-Allowed transitions are `pending` to `processing` or `cancelled`, and
-`processing` to `completed` or `cancelled`. `completed` and `cancelled` are
-terminal states. Unknown statuses, repeated statuses, and disallowed
-transitions return HTTP `422`; orders outside the requested user return `404`.
-
-### Service URLs
-
-The Order Service reads the Cart and Product Service base URLs from
-`CART_SERVICE_URL` and `PRODUCT_SERVICE_URL`. Local defaults are
-`http://localhost:3001` and `http://localhost:3000`. Each client uses its own
-`*_TIMEOUT` and `*_CONNECT_TIMEOUT` settings, in seconds.
-
-## About Laravel
-
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
-```
-
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+| Variable | Default Docker | Deskripsi |
+|---|---|---|
+| `APP_URL` | `http://localhost:3003` | URL dasar order-service |
+| `DB_CONNECTION` | `mysql` | Driver database |
+| `DB_HOST` | `order-db` | Host container MySQL |
+| `DB_PORT` | `3306` | Port internal MySQL container |
+| `DB_DATABASE` | `ordersdb` | Nama database |
+| `DB_USERNAME` | `orderuser` | Username database |
+| `DB_PASSWORD` | `orderpassword` | Password database |
+| `CART_SERVICE_URL` | `http://cart-service:3001` | Alamat base URL cart-service |
+| `CART_SERVICE_TIMEOUT` | `5` | Batas timeout HTTP (detik, maks 5) |
+| `PRODUCT_SERVICE_URL` | `http://product-service:3000` | Alamat base URL product-service |
+| `PRODUCT_SERVICE_TIMEOUT` | `5` | Batas timeout HTTP (detik, maks 5) |

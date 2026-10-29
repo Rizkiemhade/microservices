@@ -11,40 +11,32 @@ class StoreOrderRequestTest extends TestCase
     public function test_valid_checkout_request_passes_validation(): void
     {
         $data = [
-            'user_id' => 42,
-            'idempotency_key' => 'checkout-42-001',
+            'user_id' => 7,
         ];
 
-        $validator = Validator::make($data, (new StoreOrderRequest)->rules());
+        $request = new StoreOrderRequest;
+        $validator = Validator::make($data, $request->rules(), $request->messages());
 
         $this->assertTrue($validator->passes());
         $validated = $validator->validated();
-        $this->assertSame(42, $validated['user_id']);
-        $this->assertSame('checkout-42-001', $validated['idempotency_key']);
+        $this->assertSame(7, $validated['user_id']);
     }
 
-    public function test_checkout_requires_a_valid_user_id(): void
+    public function test_checkout_requires_user_id(): void
     {
-        $validator = Validator::make([
-            'user_id' => 0,
-        ], (new StoreOrderRequest)->rules());
+        $request = new StoreOrderRequest;
+        $validator = Validator::make([], $request->rules(), $request->messages());
+
+        $this->assertTrue($validator->fails());
+        $this->assertSame('Field user_id wajib diisi', $validator->errors()->first('user_id'));
+    }
+
+    public function test_checkout_requires_a_positive_integer_user_id(): void
+    {
+        $request = new StoreOrderRequest;
+        $validator = Validator::make(['user_id' => 0], $request->rules(), $request->messages());
 
         $this->assertTrue($validator->fails());
         $this->assertArrayHasKey('user_id', $validator->errors()->toArray());
-    }
-
-    public function test_client_cannot_supply_cart_items_or_prices(): void
-    {
-        $validator = Validator::make([
-            'user_id' => 42,
-            'total_amount' => 1,
-            'items' => [['product_id' => 7, 'quantity' => 2]],
-            'unit_price' => 1,
-        ], (new StoreOrderRequest)->rules());
-
-        $this->assertTrue($validator->fails());
-        $this->assertArrayHasKey('total_amount', $validator->errors()->toArray());
-        $this->assertArrayHasKey('items', $validator->errors()->toArray());
-        $this->assertArrayHasKey('unit_price', $validator->errors()->toArray());
     }
 }
